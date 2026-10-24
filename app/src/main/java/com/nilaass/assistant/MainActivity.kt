@@ -131,6 +131,9 @@ private fun NilaasSApp() {
                 }
                 if (statusMessage.isNotBlank()) Text(statusMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                 when (page) {
+    Page.AVATAR -> {
+        NilaAvatarPage()
+    }
                     Page.CHAT -> {
                         LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(lines) { line ->
