@@ -64,7 +64,18 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Page(val title: String) { CHAT("Chat"), STORAGE("Storage"), SKILLS("Skills"), RESEARCH("Web"), MEDIA("Media"), SECURITY("Security Lab"), VAULT("Vault"), SETTINGS("AI Setup"), PRIVACY("Privacy") }
+private enum class Page(val title: String) {
+    CHAT("Chat"),
+    AVATAR("Nila Avatar"),
+    STORAGE("Storage"),
+    SKILLS("Skills"),
+    RESEARCH("Web"),
+    MEDIA("Media"),
+    SECURITY("Security Lab"),
+    VAULT("Vault"),
+    SETTINGS("AI Setup"),
+    PRIVACY("Privacy")
+}
 
 @Composable
 private fun NilaasSApp() {
