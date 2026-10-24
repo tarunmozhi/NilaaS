@@ -10,7 +10,6 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.widget.ImageView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
@@ -19,6 +18,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,12 +30,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.ImageView
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
 
 private val NilaNavy = Color(0xFF071426)
 private val NilaPanel = Color(0xFF10243B)
@@ -44,48 +48,46 @@ private val NilaCyan = Color(0xFF65DFFF)
 @Composable
 fun NilaAvatarPage(
     onSendMessage: (String, (String) -> Unit) -> Unit = { _, done ->
-        done("Avatar chat has not been connected to the AI yet.")
+        done("Avatar chat is not connected to the AI.")
     }
 ) {
     val context = LocalContext.current
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
-
-    var avatarUri by remember { mutableStateOf<Uri?>(null) }
-    var message by remember { mutableStateOf("") }
-    var reply by remember {
-        mutableStateOf("வணக்கம்! நான் நிலா. என்னிடம் பேசுங்கள் ❤️")
+    val handler = remember { Handler(Looper.getMainLooper()) }
+    val preferences = remember {
+        context.getSharedPreferences("nila_avatar", android.content.Context.MODE_PRIVATE)
     }
+
+    var avatarUri by remember {
+        mutableStateOf<Uri?>(preferences.getString("avatar_uri", null)?.let(Uri::parse))
+    }
+    var message by remember { mutableStateOf("") }
+    var reply by remember { mutableStateOf("வணக்கம்! நான் நிலா. என்னிடம் பேசுங்கள் ❤️") }
+    var status by remember { mutableStateOf("Ready") }
     var listening by remember { mutableStateOf(false) }
     var speaking by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(true) }
-    var status by remember { mutableStateOf("Ready") }
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var panX by remember { mutableFloatStateOf(0f) }
+    var panY by remember { mutableFloatStateOf(0f) }
     var ttsReady by remember { mutableStateOf(false) }
-
     val tts = remember { mutableStateOf<TextToSpeech?>(null) }
 
     DisposableEffect(context) {
         var disposed = false
-
         val engine = TextToSpeech(context) { result ->
-            mainHandler.post {
+            handler.post {
                 if (disposed) return@post
-
-                val currentEngine = tts.value
-                if (result == TextToSpeech.SUCCESS && currentEngine != null) {
+                if (result == TextToSpeech.SUCCESS) {
                     ttsReady = true
-                    status = "Voice ready"
-
-                    currentEngine.setOnUtteranceProgressListener(
+                    tts.value?.setOnUtteranceProgressListener(
                         object : UtteranceProgressListener() {
                             override fun onStart(utteranceId: String?) {
-                                mainHandler.post {
-                                    if (!disposed) speaking = true
-                                }
+                                handler.post { if (!disposed) speaking = true }
                             }
 
                             override fun onDone(utteranceId: String?) {
-                                mainHandler.post {
+                                handler.post {
                                     if (!disposed) {
                                         speaking = false
                                         status = "Ready"
@@ -93,37 +95,22 @@ fun NilaAvatarPage(
                                 }
                             }
 
-                            @Deprecated("Deprecated in Java")
                             override fun onError(utteranceId: String?) {
-                                mainHandler.post {
+                                handler.post {
                                     if (!disposed) {
                                         speaking = false
                                         status = "Voice playback failed"
                                     }
                                 }
                             }
-
-                            override fun onError(
-                                utteranceId: String?,
-                                errorCode: Int
-                            ) {
-                                mainHandler.post {
-                                    if (!disposed) {
-                                        speaking = false
-                                        status = "Voice playback failed ($errorCode)"
-                                    }
-                                }
-                            }
                         }
                     )
+                    status = "Voice ready"
                 } else {
-                    ttsReady = false
-                    speaking = false
-                    status = "Text-to-speech initialization failed"
+                    status = "Text-to-speech unavailable"
                 }
             }
         }
-
         tts.value = engine
 
         onDispose {
@@ -131,98 +118,25 @@ fun NilaAvatarPage(
             engine.stop()
             engine.shutdown()
             tts.value = null
-            ttsReady = false
-            speaking = false
         }
     }
 
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) avatarUri = uri
-    }
-
-    val animation = rememberInfiniteTransition(label = "nila-avatar")
-
-    val breathing by animation.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.015f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "breathing"
-    )
-
-    val talkingMotion by animation.animateFloat(
-        initialValue = 0f,
-        targetValue = if (speaking) 1f else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(240),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "talking"
-    )
-
-    fun speak(text: String) {
-        if (!voiceEnabled || text.isBlank()) return
-
-        val engine = tts.value
-        if (engine == null || !ttsReady) {
-            status = "Voice engine is still starting. Try again shortly."
-            return
-        }
-
-        val isTamil = text.any { it in '\u0B80'..'\u0BFF' }
-        val language = if (isTamil) {
-            Locale.forLanguageTag("ta-IN")
-        } else {
-            Locale.forLanguageTag("en-IN")
-        }
-
-        val availability = engine.isLanguageAvailable(language)
-
-        if (availability == TextToSpeech.LANG_MISSING_DATA ||
-            availability == TextToSpeech.LANG_NOT_SUPPORTED
-        ) {
-            speaking = false
-            status = if (isTamil) {
-                "Tamil voice data is unavailable. Install Tamil voice data in your TTS settings."
-            } else {
-                "English voice data is unavailable. Check TTS settings."
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
             }
-            return
-        }
-
-        val languageResult = engine.setLanguage(language)
-        if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
-            languageResult == TextToSpeech.LANG_NOT_SUPPORTED
-        ) {
-            speaking = false
-            status = if (isTamil) {
-                "Tamil voice is not supported by the installed TTS engine."
-            } else {
-                "English voice is not supported by the installed TTS engine."
-            }
-            return
-        }
-
-        engine.setSpeechRate(0.92f)
-        engine.setPitch(1.0f)
-
-        speaking = true
-        status = if (isTamil) "Speaking Tamil…" else "Speaking English…"
-
-        val result = engine.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "nila-avatar-${System.nanoTime()}"
-        )
-
-        if (result == TextToSpeech.ERROR) {
-            speaking = false
-            status = "Could not start voice playback"
+            avatarUri = uri
+            preferences.edit().putString("avatar_uri", uri.toString()).apply()
+            zoom = 1f
+            panX = 0f
+            panY = 0f
+            status = "Nila image loaded"
         }
     }
 
@@ -230,27 +144,95 @@ fun NilaAvatarPage(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         listening = false
-
-        val spokenText = result.data
+        val text = result.data
             ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             ?.firstOrNull()
             .orEmpty()
             .trim()
 
-        if (result.resultCode == Activity.RESULT_OK && spokenText.isNotBlank()) {
-            message = spokenText
-            status = "Speech recognized. Press Send to ask Nila."
+        if (result.resultCode == Activity.RESULT_OK && text.isNotBlank()) {
+            message = text
+            status = "Speech recognized"
+            sendMessage(text) { answer ->
+                reply = answer
+                if (voiceEnabled) speak(answer)
+            }
         } else {
-            status = "No speech recognized. Check microphone permission and try again."
+            status = "Speech not recognized. Try again."
+        }
+    }
+
+    fun unused() = Unit
+
+    val animation = rememberInfiniteTransition(label = "nila-motion")
+    val breathing by animation.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.012f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathing"
+    )
+
+    fun speak(text: String) {
+        if (!voiceEnabled || text.isBlank()) return
+        val engine = tts.value
+        if (engine == null || !ttsReady) {
+            status = "Voice engine is starting"
+            return
+        }
+
+        val tamil = text.any { it in '\u0B80'..'\u0BFF' }
+        val locale = if (tamil) Locale.forLanguageTag("ta-IN")
+        else Locale.forLanguageTag("en-IN")
+
+        val languageResult = engine.setLanguage(locale)
+        if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
+            languageResult == TextToSpeech.LANG_NOT_SUPPORTED
+        ) {
+            status = if (tamil) "Install Tamil TTS voice data"
+            else "English TTS voice unavailable"
+            return
+        }
+
+        engine.setSpeechRate(0.92f)
+        engine.setPitch(1f)
+        speaking = true
+        status = if (tamil) "Speaking Tamil…" else "Speaking English…"
+        val result = engine.speak(
+            text,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "nila-${System.nanoTime()}"
+        )
+        if (result == TextToSpeech.ERROR) {
+            speaking = false
+            status = "Could not start voice"
+        }
+    }
+
+    fun sendMessage(text: String, onReply: (String) -> Unit = {}) {
+        val request = text.trim()
+        if (request.isBlank() || busy) return
+        busy = true
+        status = "Nila is thinking…"
+        onSendMessage(request) { answer ->
+            handler.post {
+                reply = answer
+                busy = false
+                status = "Ready"
+                onReply(answer)
+                if (onReply === {}) Unit
+            }
         }
     }
 
     fun listen() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            status = "Speech recognition is unavailable. Check your phone's speech service."
+            status = "Speech service unavailable"
             return
         }
-
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -258,50 +240,16 @@ fun NilaAvatarPage(
             )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ta-IN")
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ta-IN")
-            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             putExtra(RecognizerIntent.EXTRA_PROMPT, "நிலாவிடம் தமிழில் பேசுங்கள்")
         }
-
         listening = true
-        status = "Listening for Tamil speech…"
-
-        runCatching {
-            speechLauncher.launch(intent)
-        }.onFailure {
-            listening = false
-            status = "Could not start speech recognition: ${
-                it.message ?: "unknown error"
-            }"
-        }
-    }
-
-    fun send() {
-        val request = message.trim()
-        if (request.isBlank() || busy) return
-
-        message = ""
-        busy = true
-        status = "Nila is thinking…"
-
-        try {
-            onSendMessage(request) { answer ->
-                mainHandler.post {
-                    reply = answer
-                    busy = false
-                    status = "Ready"
-
-                    if (voiceEnabled) {
-                        speak(answer)
-                    }
-                }
+        status = "Listening…"
+        runCatching { speechLauncher.launch(intent) }
+            .onFailure {
+                listening = false
+                status = "Could not start speech recognition"
             }
-        } catch (error: Exception) {
-            busy = false
-            status = "Could not get a reply: ${
-                error.message ?: "unknown error"
-            }"
-        }
     }
 
     Column(
@@ -311,19 +259,11 @@ fun NilaAvatarPage(
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            "Nila • Avatar",
-            style = MaterialTheme.typography.headlineMedium,
-            color = NilaCyan
-        )
+        Text("Nila • Avatar", color = NilaCyan,
+            style = MaterialTheme.typography.headlineMedium)
+        Text("வணக்கம்! நான் நிலா ❤️", color = Color.White)
 
-        Text(
-            "வணக்கம்! நான் நிலா ❤️",
-            color = Color.White,
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
         Box(
             modifier = Modifier
@@ -340,10 +280,8 @@ fun NilaAvatarPage(
                         color = Color.White,
                         textAlign = TextAlign.Center
                     )
-
                     Spacer(Modifier.height(12.dp))
-
-                    Button(onClick = { picker.launch("image/*") }) {
+                    Button(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
                         Text("Choose Nila image")
                     }
                 }
@@ -351,14 +289,18 @@ fun NilaAvatarPage(
                 AndroidView(
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = breathing
-                            scaleY = breathing
-                            translationY = if (speaking) {
-                                -3f * talkingMotion
-                            } else {
-                                0f
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoomChange, _ ->
+                                zoom = (zoom * zoomChange).coerceIn(1f, 4f)
+                                panX += pan.x
+                                panY += pan.y
                             }
+                        }
+                        .graphicsLayer {
+                            scaleX = zoom * breathing
+                            scaleY = zoom * breathing
+                            translationX = panX
+                            translationY = panY
                         },
                     factory = { ctx ->
                         ImageView(ctx).apply {
@@ -377,33 +319,41 @@ fun NilaAvatarPage(
 
             if (speaking) {
                 Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(12.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
                     shape = CircleShape,
                     color = NilaCyan
                 ) {
-                    Text(
-                        " ♪ Nila is speaking ",
-                        modifier = Modifier.padding(8.dp),
-                        color = NilaNavy
-                    )
+                    Text(" ♪ Nila is speaking ", modifier = Modifier.padding(8.dp),
+                        color = NilaNavy)
                 }
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            TextButton(onClick = { zoom = max(1f, zoom - 0.25f) }) {
+                Text("− Zoom", color = NilaCyan)
+            }
+            TextButton(onClick = {
+                zoom = 1f
+                panX = 0f
+                panY = 0f
+            }) {
+                Text("Reset", color = NilaCyan)
+            }
+            TextButton(onClick = { zoom = min(4f, zoom + 0.25f) }) {
+                Text("+ Zoom", color = NilaCyan)
+            }
+        }
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = NilaPanel,
             shape = RoundedCornerShape(14.dp)
         ) {
-            Text(
-                reply,
-                modifier = Modifier.padding(12.dp),
-                color = Color.White
-            )
+            Text(reply, modifier = Modifier.padding(12.dp), color = Color.White)
         }
 
         OutlinedTextField(
@@ -424,17 +374,19 @@ fun NilaAvatarPage(
                 modifier = Modifier.weight(1f),
                 enabled = !listening && !busy,
                 onClick = { listen() }
-            ) {
-                Text(if (listening) "Listening…" else "🎙 Speak")
-            }
+            ) { Text(if (listening) "Listening…" else "🎙 Speak") }
 
             Button(
                 modifier = Modifier.weight(1f),
                 enabled = message.isNotBlank() && !busy,
-                onClick = { send() }
-            ) {
-                Text(if (busy) "Thinking…" else "Send")
-            }
+                onClick = {
+                    val request = message.trim()
+                    message = ""
+                    sendMessage(request) { answer ->
+                        if (voiceEnabled) speak(answer)
+                    }
+                }
+            ) { Text(if (busy) "Thinking…" else "Send") }
         }
 
         Row(
@@ -442,43 +394,32 @@ fun NilaAvatarPage(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = { picker.launch("image/*") }) {
+            TextButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
                 Text("Change image")
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Voice", color = Color.White)
-
                 Switch(
                     checked = voiceEnabled,
-                    onCheckedChange = { enabled ->
-                        voiceEnabled = enabled
-                        if (!enabled) {
+                    onCheckedChange = {
+                        voiceEnabled = it
+                        if (!it) {
                             tts.value?.stop()
                             speaking = false
                             status = "Voice disabled"
-                        } else {
-                            status = if (ttsReady) "Voice enabled" else "Voice is starting…"
-                        }
+                        } else status = "Voice enabled"
                     }
                 )
             }
 
-            TextButton(
-                onClick = {
-                    tts.value?.stop()
-                    speaking = false
-                    status = "Voice stopped"
-                }
-            ) {
-                Text("Stop")
-            }
+            TextButton(onClick = {
+                tts.value?.stop()
+                speaking = false
+                status = "Voice stopped"
+            }) { Text("Stop") }
         }
 
-        Text(
-            status,
-            color = NilaCyan,
-            style = MaterialTheme.typography.bodySmall
-        )
+        Text(status, color = NilaCyan, style = MaterialTheme.typography.bodySmall)
     }
 }
