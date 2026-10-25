@@ -142,14 +142,33 @@ fun NilaAvatarPage(
 
 
     val animation = rememberInfiniteTransition(label = "nila-motion")
+    // Visible, gentle idle movement. A single photo cannot provide true body animation.
     val breathing by animation.animateFloat(
         initialValue = 1f,
-        targetValue = 1.012f,
+        targetValue = 1.022f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1800),
+            animation = tween(2200),
             repeatMode = RepeatMode.Reverse
         ),
         label = "breathing"
+    )
+    val sway by animation.animateFloat(
+        initialValue = -2.5f,
+        targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "idle-sway"
+    )
+    val speakingPulse by animation.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(380),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "speaking-pulse"
     )
 
     fun speak(text: String) {
@@ -298,8 +317,8 @@ fun NilaAvatarPage(
                         .graphicsLayer {
                             scaleX = zoom * breathing
                             scaleY = zoom * breathing
-                            translationX = panX
-                            translationY = panY
+                            translationX = panX + if (speaking) sway else 0f
+                            translationY = panY + if (speaking) (speakingPulse * 5f) else 0f
                         },
                     factory = { ctx ->
                         ImageView(ctx).apply {
@@ -320,10 +339,20 @@ fun NilaAvatarPage(
                 Surface(
                     modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
                     shape = CircleShape,
-                    color = NilaCyan
+                    color = NilaCyan.copy(alpha = 0.88f)
                 ) {
-                    Text(" ♪ Nila is speaking ", modifier = Modifier.padding(8.dp),
-                        color = NilaNavy)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("♫", color = NilaNavy)
+                        Text("Nila is speaking", color = NilaNavy)
+                        Text(
+                            if (speakingPulse > 0.5f) "•••" else "••",
+                            color = NilaNavy
+                        )
+                    }
                 }
             }
         }
