@@ -140,29 +140,6 @@ fun NilaAvatarPage(
         }
     }
 
-    val speechLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        listening = false
-        val text = result.data
-            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
-            .orEmpty()
-            .trim()
-
-        if (result.resultCode == Activity.RESULT_OK && text.isNotBlank()) {
-            message = text
-            status = "Speech recognized"
-            sendMessage(text) { answer ->
-                reply = answer
-                if (voiceEnabled) speak(answer)
-            }
-        } else {
-            status = "Speech not recognized. Try again."
-        }
-    }
-
-    fun unused() = Unit
 
     val animation = rememberInfiniteTransition(label = "nila-motion")
     val breathing by animation.animateFloat(
@@ -225,6 +202,28 @@ fun NilaAvatarPage(
                 onReply(answer)
                 if (onReply === {}) Unit
             }
+        }
+    }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        listening = false
+        val text = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            .orEmpty()
+            .trim()
+
+        if (result.resultCode == Activity.RESULT_OK && text.isNotBlank()) {
+            message = text
+            status = "Speech recognized"
+            sendMessage(text) { answer ->
+                reply = answer
+                if (voiceEnabled) speak(answer)
+            }
+        } else {
+            status = "Speech not recognized. Try again."
         }
     }
 
