@@ -64,6 +64,7 @@ fun NilaAvatarPage(
     var reply by remember { mutableStateOf("வணக்கம்! நான் நிலா. என்னிடம் பேசுங்கள் ❤️") }
     var status by remember { mutableStateOf("Ready") }
     var listening by remember { mutableStateOf(false) }
+    var voiceLanguage by remember { mutableStateOf("ta-IN") }
     var speaking by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var voiceEnabled by remember { mutableStateOf(true) }
@@ -256,10 +257,14 @@ fun NilaAvatarPage(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ta-IN")
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ta-IN")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, voiceLanguage)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, voiceLanguage)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "நிலாவிடம் தமிழில் பேசுங்கள்")
+            putExtra(
+                RecognizerIntent.EXTRA_PROMPT,
+                if (voiceLanguage == "ta-IN") "நிலாவிடம் தமிழில் பேசுங்கள்"
+                else "Speak to Nila in English"
+            )
         }
         listening = true
         status = "Listening…"
@@ -393,6 +398,20 @@ fun NilaAvatarPage(
             enabled = !busy,
             maxLines = 3
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Speech language:", color = Color.White)
+            TextButton(onClick = { voiceLanguage = "ta-IN" }, enabled = !listening) {
+                Text(if (voiceLanguage == "ta-IN") "● தமிழ்" else "தமிழ்", color = NilaCyan)
+            }
+            TextButton(onClick = { voiceLanguage = "en-IN" }, enabled = !listening) {
+                Text(if (voiceLanguage == "en-IN") "● English" else "English", color = NilaCyan)
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
