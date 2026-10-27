@@ -11,6 +11,10 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import java.security.KeyStore
 
 /**
  * App-private temporary workspace and conservative offline-first cloud snapshot sync.
@@ -43,15 +47,15 @@ class NilaCloudWorkspace(private val context: Context) {
     }
 
     fun enqueueSnapshot(snapshot: String): File {
-        val file = File(queue, "snapshot-${System.currentTimeMillis()}.json")
-        file.writeText(snapshot, Charsets.UTF_8)
+        val file = File(queue, "snapshot-${System.currentTimeMillis()}.bin")
+        file.writeBytes(encryptSnapshot(snapshot.toByteArray(Charsets.UTF_8)))
         return file
     }
 
-    fun pendingCount(): Int = queue.listFiles()?.count { it.isFile && it.extension == "json" } ?: 0
+    fun pendingCount(): Int = queue.listFiles()?.count { it.isFile && it.extension == "bin" } ?: 0
 
     fun pendingSnapshots(): List<File> = queue.listFiles()
-        ?.filter { it.isFile && it.extension == "json" }
+        ?.filter { it.isFile && it.extension == "bin" }
         ?.sortedBy { it.lastModified() }
         .orEmpty()
 
@@ -59,7 +63,7 @@ class NilaCloudWorkspace(private val context: Context) {
         val canonicalRoot = queue.canonicalFile
         val canonicalFile = file.canonicalFile
         require(canonicalFile.parentFile == canonicalRoot) { "Refusing to remove a file outside Nila's queue." }
-        require(canonicalFile.name.startsWith("snapshot-") && canonicalFile.extension == "json") {
+        require(canonicalFile.name.startsWith("snapshot-") && canonicalFile.extension == "bin") {
             "Refusing to remove an unrecognized queue file."
         }
         check(canonicalFile.delete()) { "Could not remove the verified queue file." }
@@ -135,7 +139,7 @@ class NilaCloudWorkspace(private val context: Context) {
                 doOutput = true
                 setRequestProperty("apikey", key)
                 setRequestProperty("Authorization", "Bearer $key")
-                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Content-Type", "application/octet-stream")
                 setRequestProperty("x-upsert", "false")
             }
             try {
@@ -174,6 +178,31 @@ class NilaCloudWorkspace(private val context: Context) {
         }
         return if (uploaded == 0) "Cloud sync checked: no pending snapshots." else
             "Verified $uploaded snapshot(s) in cloud storage. Local queue copies were removed only after verification."
+    }
+
+    private fun encryptSnapshot(plain: ByteArray): ByteArray {
+        val alias = "nilaass_cloud_snapshot_v1"
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val key: SecretKey = if (store.containsAlias(alias)) {
+            store.getKey(alias, null) as SecretKey
+        } else {
+            val generator = KeyGenerator.getInstance("AES", "AndroidKeyStore")
+            val spec = android.security.keystore.KeyGenParameterSpec.Builder(
+                alias,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or
+                    android.security.keystore.KeyProperties.PURPOSE_DECRYPT
+            ).setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build()
+            generator.init(spec)
+            generator.generateKey()
+        }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val encrypted = cipher.doFinal(plain)
+        val iv = cipher.iv
+        return byteArrayOf(iv.size.toByte()) + iv + encrypted
     }
 
     fun snapshotJson(lines: List<ChatLine>): String {
