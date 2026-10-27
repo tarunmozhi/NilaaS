@@ -90,10 +90,12 @@ class NilaCloudWorkspace(private val context: Context) {
 
     fun candidates(vault: SecureVault): List<Candidate> {
         val supabaseConfigured = !vault.get("cloud_supabase_url").isNullOrBlank() &&
-            !vault.get("cloud_supabase_anon_key").isNullOrBlank()
+            !vault.get("cloud_supabase_anon_key").isNullOrBlank() &&
+            !vault.get("cloud_supabase_access_token").isNullOrBlank() &&
+            !vault.get("cloud_supabase_user_id").isNullOrBlank()
         return listOf(
             Candidate("supabase", "Supabase Storage", true, true, true, supabaseConfigured,
-                if (supabaseConfigured) "Configured; can be evaluated for a sync attempt." else "Free-tier candidate; requires your project URL, anon key, private bucket and access policies."),
+                if (supabaseConfigured) "Configured with a user token; private per-user path is used." else "Free-tier candidate; requires project URL, anon key, signed-in user access token, user UUID, private bucket and restrictive policies."),
             Candidate("firebase", "Firebase", true, true, true, false,
                 "Candidate only; Firebase adapter is not implemented in this version."),
             Candidate("webdav", "WebDAV-compatible storage", true, true, true, false,
@@ -122,6 +124,11 @@ class NilaCloudWorkspace(private val context: Context) {
 
         val base = vault.get("cloud_supabase_url").orEmpty().trimEnd('/')
         val key = vault.get("cloud_supabase_anon_key").orEmpty()
+        val accessToken = vault.get("cloud_supabase_access_token").orEmpty()
+        val userId = vault.get("cloud_supabase_user_id").orEmpty()
+        require(accessToken.isNotBlank() && userId.matches(Regex("[0-9a-fA-F-]{36}"))) {
+            "Supabase sign-in access token and user UUID are required for private per-user storage."
+        }
         require(base.startsWith("https://")) { "Supabase URL must use HTTPS." }
         require(key.isNotBlank()) { "Supabase anon key is missing." }
         val bucket = (vault.get("cloud_supabase_bucket") ?: "nila-private").trim()
@@ -129,7 +136,7 @@ class NilaCloudWorkspace(private val context: Context) {
 
         var uploaded = 0
         pendingSnapshots().forEach { file ->
-            val objectName = "snapshots/${file.name}"
+            val objectName = "$userId/snapshots/${file.name}"
             val endpoint = "$base/storage/v1/object/$bucket/$objectName"
             val bytes = file.readBytes()
             val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
@@ -138,7 +145,7 @@ class NilaCloudWorkspace(private val context: Context) {
                 readTimeout = 30000
                 doOutput = true
                 setRequestProperty("apikey", key)
-                setRequestProperty("Authorization", "Bearer $key")
+                setRequestProperty("Authorization", "Bearer $accessToken")
                 setRequestProperty("Content-Type", "application/octet-stream")
                 setRequestProperty("x-upsert", "false")
             }
