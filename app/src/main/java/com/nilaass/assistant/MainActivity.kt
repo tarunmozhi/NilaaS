@@ -37,6 +37,7 @@ import com.nilaass.assistant.core.AssistantEngine
 import com.nilaass.assistant.core.ChatLine
 import com.nilaass.assistant.storage.LocalStore
 import com.nilaass.assistant.storage.EncryptedBackup
+import com.nilaass.assistant.storage.NilaCloudStoragePage
 import com.nilaass.assistant.security.SecureVault
 import com.nilaass.assistant.network.OpenAiCompatibleClient
 import com.nilaass.assistant.learning.LearningStore
@@ -62,6 +63,7 @@ private enum class Page(val title: String) {
     CHAT("Chat"),
     AVATAR("Nila Avatar"),
     STORAGE("Storage"),
+    CLOUD("Nila Cloud"),
     SKILLS("Skills"),
     RESEARCH("Web"),
     MEDIA("Media"),
@@ -388,6 +390,8 @@ private fun NilaasSApp() {
                             }
                         }
                     }
+
+                    Page.CLOUD -> NilaCloudStoragePage(secureVault, lines)
 
                     Page.STORAGE -> StoragePage(
                         store,
