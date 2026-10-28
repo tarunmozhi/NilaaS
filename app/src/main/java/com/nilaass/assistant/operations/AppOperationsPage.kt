@@ -66,6 +66,11 @@ fun AppOperationsPage() {
                     if (accessibilityEnabled) "Accessibility bridge is active in this app process."
                     else "Accessibility bridge status may update after you return from Android Settings."
                 )
+                OutlinedButton(onClick = {
+                    accessibilityEnabled = NilaAccessibilityService.isEnabled()
+                    status = if (accessibilityEnabled) "Accessibility bridge is active."
+                    else "Bridge is not active yet. Enable it in Android Settings and return."
+                }) { Text("Refresh status") }
                 Text("This prototype only supports opening apps and explicit Back/Home navigation. It does not read screen contents or click arbitrary controls.")
                 Button(onClick = {
                     runCatching {
