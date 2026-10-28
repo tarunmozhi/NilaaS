@@ -40,6 +40,7 @@ import com.nilaass.assistant.storage.EncryptedBackup
 import com.nilaass.assistant.security.SecureVault
 import com.nilaass.assistant.network.OpenAiCompatibleClient
 import com.nilaass.assistant.learning.LearningStore
+import com.nilaass.assistant.operations.AppOperationsPage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +67,7 @@ private enum class Page(val title: String) {
     RESEARCH("Web"),
     MEDIA("Media"),
     SECURITY("Security Lab"),
+    APPS("App Operations"),
     VAULT("Vault"),
     SETTINGS("AI Setup"),
     PRIVACY("Privacy")
@@ -407,6 +409,8 @@ private fun NilaasSApp() {
                     Page.MEDIA -> MediaPage(secureVault, store)
 
                     Page.SECURITY -> SecurityLabPage()
+
+                    Page.APPS -> AppOperationsPage()
 
                     Page.VAULT -> VaultPage(secureVault)
 
