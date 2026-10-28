@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nila_accessibility_service_description">Allows NilaasS to perform explicit Back and Home navigation when you enable and invoke it. This version does not read screen contents.</string>
+</resources>
